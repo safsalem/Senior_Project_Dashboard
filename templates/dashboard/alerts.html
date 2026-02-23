@@ -1,0 +1,194 @@
+{% extends "dashboard/base.html" %}
+{% block title %}Alerts History{% endblock %}
+{% block page_title %}Alerts History{% endblock %}
+
+{% block content %}
+  <div class="grid">
+    <div class="card full">
+      <div class="card-head">
+        <div class="card-title">Alert History</div>
+        <div class="card-actions">
+          <button class="btn btn-ghost btn-sm">Sort</button>
+          <button class="btn btn-ghost btn-sm" id="alertsFilterBtn" type="button">Filter</button>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table class="table" id="alertsTable">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Type</th>
+              <th>Value</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for a in alerts %}
+            <tr>
+              <td>{{ a.time }}</td>
+              <td>{{ a.type }}</td>
+              <td>{{ a.value }}</td>
+              <td><span class="status {{ a.status|lower }}">{{ a.status }}</span></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="table-footer">
+        <div class="pager">
+          <button class="pager-btn" aria-label="Previous">‹</button>
+          <button class="pager-btn active">1</button>
+          <button class="pager-btn">2</button>
+          <button class="pager-btn">3</button>
+          <button class="pager-btn">›</button>
+        </div>
+        <div class="showing" id="alertsShowing">Showing {{ alerts|length }}</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Filter Modal (uses checkboxes for multi-select) -->
+  <div class="modal-overlay" id="alertsModal">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title">Filter Alerts</div>
+        <button class="btn btn-ghost btn-sm" id="alertsModalClose" type="button">Close</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="form-group">
+          <label>Type</label>
+          <div class="chip-group" id="filterTypeGroup">
+            <label class="chip"><input type="checkbox" value="CO High"> <span>CO High</span></label>
+            <label class="chip"><input type="checkbox" value="NOx Spike"> <span>NOx Spike</span></label>
+            <label class="chip"><input type="checkbox" value="System Notice"> <span>System Notice</span></label>
+          </div>
+          <small>Leave all unchecked to include all types.</small>
+        </div>
+
+        <div class="form-group">
+          <label>Status</label>
+          <div class="chip-group" id="filterStatusGroup">
+            <label class="chip"><input type="checkbox" value="New"> <span>New</span></label>
+            <label class="chip"><input type="checkbox" value="Acknowledged"> <span>Acknowledged</span></label>
+            <label class="chip"><input type="checkbox" value="Resolved"> <span>Resolved</span></label>
+          </div>
+          <small>Leave all unchecked to include all statuses.</small>
+        </div>
+
+        <div class="modal-actions">
+          <button class="btn" id="applyFilters" type="button">Apply</button>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  let ALERTS_CACHE = [];
+
+  function renderAlerts(alerts){
+    const tbody = document.querySelector("#alertsTable tbody");
+    const showing = document.getElementById("alertsShowing");
+    if(!tbody) return;
+
+    tbody.innerHTML = "";
+    for (const a of alerts){
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${a.time}</td>
+        <td>${a.type}</td>
+        <td>${a.value}</td>
+        <td><span class="status ${String(a.status || "").toLowerCase()}">${a.status}</span></td>
+      `;
+      tbody.appendChild(tr);
+    }
+    if (showing) showing.textContent = `Showing ${alerts.length}`;
+  }
+
+  async function refreshAlerts(range){
+    try{
+      const res = await fetch(`/api/alerts/?range=${encodeURIComponent(range)}`);
+      const payload = await res.json();
+      ALERTS_CACHE = payload.alerts || [];
+      renderAlerts(ALERTS_CACHE);
+    }catch(err){
+      console.error("Error loading alerts", err);
+    }
+  }
+
+  function getCheckedValues(containerId){
+    const container = document.getElementById(containerId);
+    if (!container) return [];
+    const values = [];
+    container.querySelectorAll("input[type='checkbox']").forEach(cb => {
+      if (cb.checked) values.push(cb.value);
+    });
+    return values;
+  }
+
+  // Time pills behavior (shared with top bar)
+  (function () {
+    const pills = document.querySelectorAll("#timePills .pill");
+    pills.forEach(p => {
+      p.addEventListener("click", async () => {
+        pills.forEach(x => x.classList.remove("active"));
+        p.classList.add("active");
+        await refreshAlerts(p.dataset.range || "1h");
+      });
+    });
+  })();
+
+  // Initial load: use currently active pill
+  (function(){
+    const active = document.querySelector("#timePills .pill.active");
+    refreshAlerts(active?.dataset.range || "1h");
+  })();
+
+  // Modal + filtering
+  (function(){
+    const modal = document.getElementById("alertsModal");
+    const openBtn = document.getElementById("alertsFilterBtn");
+    const closeBtn = document.getElementById("alertsModalClose");
+    const applyBtn = document.getElementById("applyFilters");
+
+    function openModal(){
+      if (modal) modal.classList.add("open");
+    }
+    function closeModal(){
+      if (modal) modal.classList.remove("open");
+    }
+
+    openBtn && openBtn.addEventListener("click", openModal);
+    closeBtn && closeBtn.addEventListener("click", closeModal);
+
+    if (modal){
+      modal.addEventListener("click", (e) => {
+        if (e.target === modal){
+          closeModal();
+        }
+      });
+    }
+
+    applyBtn && applyBtn.addEventListener("click", () => {
+      const selectedTypes = getCheckedValues("filterTypeGroup");
+      const selectedStatuses = getCheckedValues("filterStatusGroup");
+
+      let filtered = ALERTS_CACHE.slice();
+
+      if (selectedTypes.length){
+        filtered = filtered.filter(a => selectedTypes.includes(a.type));
+      }
+      if (selectedStatuses.length){
+        filtered = filtered.filter(a => selectedStatuses.includes(a.status));
+      }
+
+      renderAlerts(filtered);
+      closeModal();
+    });
+  })();
+</script>
+{% endblock %}

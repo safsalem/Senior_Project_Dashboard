@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{% block title %}ERP Dashboard{% endblock %}</title>
+  <link rel="stylesheet" href="/static/css/styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-title">ERP Dashboard</div>
+        <div class="brand-subtitle">Emissions Monitoring</div>
+      </div>
+
+      <nav class="nav">
+        <a class="nav-item {% if request.path == '/' or request.path|slice:':11' == '/dashboard/' %}active{% endif %}"
+           href="/dashboard/">
+          <span class="dot"></span> Dashboard
+        </a>
+        <a class="nav-item {% if request.path|slice:':9' == '/alerts/' %}active{% endif %}"
+           href="/alerts/">
+          <span class="dot"></span> Alerts History
+        </a>
+        <a class="nav-item {% if request.path|slice:':10' == '/insights/' %}active{% endif %}"
+           href="/insights/">
+          <span class="dot"></span> AI Insights
+        </a>
+      </nav>
+
+      </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div class="topbar-left">
+          <div class="page-title">{% block page_title %}{% endblock %}</div>
+        </div>
+
+        <div class="topbar-right">
+          <div class="pill-group time-pills" id="timePills">
+            <button class="pill" data-range="24h">24h</button>
+            <button class="pill" data-range="10h">10h</button>
+            <button class="pill" data-range="5h">5h</button>
+            <button class="pill active" data-range="1h">1h</button>
+          </div>
+
+          <button class="icon-btn" id="notifBtn" aria-label="Notifications">
+            <span class="bell"></span>
+            <span class="badge" id="notifBadge">3</span>
+          </button>
+
+          <button class="btn btn-ghost" id="filterBtn" aria-label="Filter">
+            <span class="funnel"></span> Filter
+          </button>
+        </div>
+
+        <div class="notif-panel" id="notifPanel" aria-hidden="true">
+          <div class="notif-header">
+            <div class="notif-title">Notifications</div>
+            <button class="btn btn-ghost btn-sm" id="notifClose">Close</button>
+          </div>
+          <div class="notif-list">
+            <div class="notif-item">
+              <div class="notif-item-title">CO High</div>
+              <div class="notif-item-meta">312 ppm • 10:42</div>
+            </div>
+            <div class="notif-item">
+              <div class="notif-item-title">NOx Spike</div>
+              <div class="notif-item-meta">410 ppm • 10:15</div>
+            </div>
+            <div class="notif-item">
+              <div class="notif-item-title">Upload delay</div>
+              <div class="notif-item-meta">Network fluctuation • 09:05</div>
+            </div>
+          </div>
+        </div>
+
+      </header>
+
+      <section class="content">
+        {% block content %}{% endblock %}
+      </section>
+    </main>
+  </div>
+
+<script>
+  // Notifications panel toggle
+  (function () {
+    const btn = document.getElementById("notifBtn");
+    const panel = document.getElementById("notifPanel");
+    const closeBtn = document.getElementById("notifClose");
+    if (!btn || !panel) return;
+
+    function openPanel() {
+      panel.classList.add("open");
+      panel.setAttribute("aria-hidden", "false");
+    }
+    function closePanel() {
+      panel.classList.remove("open");
+      panel.setAttribute("aria-hidden", "true");
+    }
+
+    btn.addEventListener("click", () => {
+      panel.classList.contains("open") ? closePanel() : openPanel();
+    });
+    closeBtn && closeBtn.addEventListener("click", closePanel);
+    document.addEventListener("click", (e) => {
+      if (!panel.contains(e.target) && !btn.contains(e.target)) closePanel();
+    });
+  })();
+</script>
+
+{% block scripts %}{% endblock %}
+</body>
+</html>

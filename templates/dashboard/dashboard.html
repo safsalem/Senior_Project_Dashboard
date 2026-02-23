@@ -1,0 +1,121 @@
+{% extends "dashboard/base.html" %}
+{% block title %}Dashboard • Emissions{% endblock %}
+{% block page_title %}NOx & CO Levels Monitoring{% endblock %}
+
+{% block content %}
+  <div class="grid">
+    <div class="card">
+      <div class="card-head">
+        <div class="card-title">NOx Levels</div>
+        <div class="card-actions">
+          <button class="btn btn-ghost btn-sm" id="noxRefresh">Refresh</button>
+        </div>
+      </div>
+      <div class="chart-wrap">
+        <canvas id="noxChart" height="120"></canvas>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <div class="card-title">CO Levels</div>
+        <div class="card-actions">
+          <button class="btn btn-ghost btn-sm" id="coRefresh">Refresh</button>
+        </div>
+      </div>
+      <div class="chart-wrap">
+        <canvas id="coChart" height="120"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <script id="initialData" type="application/json">
+    {
+      "labels": {{ labels_json|safe }},
+      "nox": {{ nox_json|safe }},
+      "co": {{ co_json|safe }}
+    }
+  </script>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const data = JSON.parse(document.getElementById("initialData").textContent);
+
+  function createAreaChart(ctx, labels, series, label) {
+    return new Chart(ctx, {
+      type: "line",
+      data: {
+        labels,
+        datasets: [{
+          label,
+          data: series,
+          fill: true,
+          tension: 0.35,
+          pointRadius: 0,
+          borderWidth: 2
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: { duration: 400 },
+        plugins: {
+          legend: { display: false },
+          tooltip: { mode: "index", intersect: false }
+        },
+        scales: {
+          x: { grid: { display: false } },
+          y: { beginAtZero: true }
+        }
+      }
+    });
+  }
+
+  const noxChart = createAreaChart(
+    document.getElementById("noxChart"),
+    data.labels,
+    data.nox,
+    "NOx (ppm)"
+  );
+
+  const coChart = createAreaChart(
+    document.getElementById("coChart"),
+    data.labels,
+    data.co,
+    "CO (ppm)"
+  );
+
+  async function refresh(range) {
+    const res = await fetch(`/api/timeseries/?range=${encodeURIComponent(range)}`);
+    const payload = await res.json();
+    noxChart.data.labels = payload.labels;
+    noxChart.data.datasets[0].data = payload.nox;
+    noxChart.update();
+    coChart.data.labels = payload.labels;
+    coChart.data.datasets[0].data = payload.co;
+    coChart.update();
+  }
+
+  // Time pills behavior
+  (function () {
+    const pills = document.querySelectorAll("#timePills .pill");
+    pills.forEach(p => {
+      p.addEventListener("click", async () => {
+        pills.forEach(x => x.classList.remove("active"));
+        p.classList.add("active");
+        await refresh(p.dataset.range || "1h");
+      });
+    });
+  })();
+
+  document.getElementById("noxRefresh")?.addEventListener("click", () => {
+    const active = document.querySelector("#timePills .pill.active");
+    refresh(active?.dataset.range || "1h");
+  });
+  document.getElementById("coRefresh")?.addEventListener("click", () => {
+    const active = document.querySelector("#timePills .pill.active");
+    refresh(active?.dataset.range || "1h");
+  });
+</script>
+{% endblock %}
