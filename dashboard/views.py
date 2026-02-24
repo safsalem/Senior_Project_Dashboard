@@ -3,7 +3,6 @@ from datetime import datetime, timedelta
 from django.http import JsonResponse
 from django.shortcuts import render
 
-# generate deterministic pseudo-random time series data for demo purposes
 def _make_series(minutes=60, base=250, swing=140, seed=7):
     # Deterministic pseudo-random series (no external deps)
     x = []
@@ -52,10 +51,21 @@ def dashboard_view(request):
     labels, nox = _make_series(minutes=60, base=280, swing=180, seed=7)
     _, co = _make_series(minutes=60, base=80, swing=70, seed=3)
 
+    # Current readings (latest point)
+    current_nox = nox[-1] if nox else 0
+    current_co = co[-1] if co else 0
+
+    # Dummy ambient temperature for UI (replace with real sensor later)
+    temp_c = round(27.0 + (((len(labels) * 13) % 7) - 3) * 0.6, 1)
+
     context = {
         "labels_json": json.dumps(labels),
         "nox_json": json.dumps(nox),
         "co_json": json.dumps(co),
+        "current_nox": current_nox,
+        "current_co": current_co,
+        "temp_c": temp_c,
+        "updated_at": datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC"),
     }
     return render(request, "dashboard/dashboard.html", context)
 

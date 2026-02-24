@@ -3,6 +3,36 @@
 {% block page_title %}NOx & CO Levels Monitoring{% endblock %}
 
 {% block content %}
+
+  <div class="kpi-row">
+    <div class="kpi-card">
+      <div class="kpi-icon temp"></div>
+      <div class="kpi-meta">
+        <div class="kpi-label">Temperature</div>
+        <div class="kpi-value">{{ temp_c }} °C</div>
+        <div class="kpi-sub">Updated: {{ updated_at }}</div>
+      </div>
+    </div>
+
+    <div class="kpi-card">
+      <div class="kpi-icon nox"></div>
+      <div class="kpi-meta">
+        <div class="kpi-label">Current NOx</div>
+        <div class="kpi-value">{{ current_nox }} ppm</div>
+        <div class="kpi-sub">Live reading</div>
+      </div>
+    </div>
+
+    <div class="kpi-card">
+      <div class="kpi-icon co"></div>
+      <div class="kpi-meta">
+        <div class="kpi-label">Current CO</div>
+        <div class="kpi-value">{{ current_co }} ppm</div>
+        <div class="kpi-sub">Live reading</div>
+      </div>
+    </div>
+  </div>
+
   <div class="grid">
     <div class="card">
       <div class="card-head">
