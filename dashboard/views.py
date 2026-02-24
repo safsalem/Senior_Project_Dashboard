@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 from django.http import JsonResponse
 from django.shortcuts import render
 
+# generate deterministic pseudo-random time series data for demo purposes
 def _make_series(minutes=60, base=250, swing=140, seed=7):
     # Deterministic pseudo-random series (no external deps)
     x = []
