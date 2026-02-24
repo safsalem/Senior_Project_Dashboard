@@ -4,7 +4,7 @@ from django.http import JsonResponse
 from django.shortcuts import render
 
 def _make_series(minutes=60, base=250, swing=140, seed=7):
-    # Deterministic pseudo-random series (no external deps)
+    # Deterministic pseudo-random series
     x = []
     y = []
     t0 = datetime.utcnow() - timedelta(minutes=minutes)
@@ -35,8 +35,7 @@ def _filter_alerts_by_range(alerts, rng):
     mapping = {"1h": 1, "5h": 5, "10h": 10, "24h": 24}
     hours = mapping.get(rng, 1)
 
-    # "Now" is based on the newest alert timestamp so the demo always shows results.
-    # Later, replace with datetime.utcnow().
+    # "Now" is based on the newest alert timestamp.
     newest = max(datetime.strptime(a["time"], "%Y-%m-%d %H:%M") for a in alerts)
     cutoff = newest - timedelta(hours=hours)
 
@@ -55,7 +54,7 @@ def dashboard_view(request):
     current_nox = nox[-1] if nox else 0
     current_co = co[-1] if co else 0
 
-    # Dummy ambient temperature for UI (replace with real sensor later)
+    # Dummy ambient temperature for UI
     temp_c = round(27.0 + (((len(labels) * 13) % 7) - 3) * 0.6, 1)
 
     context = {
@@ -70,7 +69,7 @@ def dashboard_view(request):
     return render(request, "dashboard/dashboard.html", context)
 
 def alerts_view(request):
-    # Server-render initial 1h alerts (so the page loads without JS too)
+    # Server-render initial 1h alerts
     rng = request.GET.get("range", "1h")
     alerts = _filter_alerts_by_range(_dummy_alerts(), rng)
     return render(request, "dashboard/alerts.html", {"alerts": alerts, "range": rng})
