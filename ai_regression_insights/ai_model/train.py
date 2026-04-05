@@ -5,6 +5,8 @@ from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 import pandas as pd
 import joblib
 from sklearn.preprocessing import StandardScaler
+from pathlib import Path
+import json
 
 
 def train_model():
@@ -51,9 +53,29 @@ def train_model():
     print(f'Mean Absolute Error: {mae:.4f}')
     print(f'R-squared: {r2:.4f}')
 
-    # Save the trained model and scaler
-    joblib.dump(model, 'trained_model.pkl')
-    joblib.dump(scaler, 'scaler.pkl')
+    # Save the trained model and scaler into the ai_model package folder
+    pkg_dir = Path(__file__).resolve().parent
+    model_path = pkg_dir / 'trained_model.pkl'
+    scaler_path = pkg_dir / 'scaler.pkl'
+    joblib.dump(model, model_path)
+    joblib.dump(scaler, scaler_path)
+
+    # Return evaluation metrics for callers (e.g., web view) and persist them
+    metrics = {
+        'mse': float(mse),
+        'mae': float(mae),
+        'r2': float(r2),
+    }
+
+    # persist metrics to ai_model/metrics.json so views can read them without retraining
+    try:
+        metrics_path = pkg_dir / 'metrics.json'
+        with open(metrics_path, 'w') as f:
+            json.dump(metrics, f)
+    except Exception:
+        pass
+
+    return metrics
 
 if __name__ == "__main__":
     train_model()

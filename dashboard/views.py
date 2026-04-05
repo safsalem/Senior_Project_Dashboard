@@ -75,7 +75,8 @@ def alerts_view(request):
     return render(request, "dashboard/alerts.html", {"alerts": alerts, "range": rng})
 
 def insights_view(request):
-    return render(request, "dashboard/insights.html")
+    from django.shortcuts import redirect
+    return redirect('/insights/')
 
 def timeseries_api(request):
     rng = request.GET.get("range", "1h")

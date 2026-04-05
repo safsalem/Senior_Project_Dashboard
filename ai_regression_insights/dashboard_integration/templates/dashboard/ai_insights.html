@@ -1,26 +1,75 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Insights</title>
-    <link rel="stylesheet" href="{% static 'css/styles.css' %}">
-</head>
-<body>
-    <div class="container">
-        <h1>AI Regression Insights</h1>
-        <div id="results">
-            <h2>Model Performance</h2>
-            <p><strong>R-squared:</strong> {{ r_squared }}</p>
-            <p><strong>Mean Absolute Error (MAE):</strong> {{ mae }}</p>
-            <p><strong>Mean Squared Error (MSE):</strong> {{ mse }}</p>
+{% extends "dashboard/base.html" %}
+{% block title %}AI Insights{% endblock %}
+{% block page_title %}AI Insights{% endblock %}
+
+{% block content %}
+        <style>
+                .ai-insights-container{width:100%;margin:0;padding:8 10px}
+                .ai-insights-grid{display:flex;gap:32px;align-items:flex-start}
+                .ai-insights-left{flex:0 0 38%;text-align:left;padding-left:28px}
+                .ai-insights-right{flex:1 1 62%;min-width:0;padding-right:28px}
+                .ai-table-wrap{overflow:auto;max-width:100%}
+                .ai-table-wrap table{border:0;width:100%;border-collapse:separate;font-size:13px}
+                .ai-table-wrap thead th{background:transparent;border-bottom:1px solid rgba(0,0,0,.08);font-weight:900;padding:8px}
+                .ai-table-wrap tbody tr td{padding:10px 12px}
+                .ai-card-alert{margin-bottom:12px}
+
+                /* transient toast for retrain status */
+                .ai-toast{
+                    position:fixed;
+                    top:18px;
+                    left:50%;
+                    transform:translateX(-50%);
+                    background:linear-gradient(180deg,#e6f7ff,#dff6fb);
+                    color:var(--c1);
+                    border-radius:20px;
+                    padding:8px 14px;
+                    box-shadow:0 8px 20px rgba(0,0,0,.08);
+                    z-index:1200;
+                    font-weight:700;
+                    animation: ai-toast-fade 1s ease-in-out 1s forwards;
+                }
+                @keyframes ai-toast-fade{
+                    from{opacity:1;transform:translateX(-50%) translateY(0)}
+                    to{opacity:0;transform:translateX(-50%) translateY(-10px)}
+                }
+        </style>
+
+    <div class="ai-insights-container">
+        <div class="card">
+
+        <div class="card-body">
+                        {% if retrain_status == 'success' %}
+                            <div class="ai-toast">Model retrained successfully.</div>
+                        {% elif retrain_status == 'failure' %}
+                            <div class="ai-toast">Retraining failed — check server logs.</div>
+                        {% endif %}
+
+            <div class="ai-insights-grid">
+                <div class="ai-insights-left">
+                    <h3>Model Performance</h3>
+                    <p><strong>R-squared:</strong> {{ metrics.r2|default:"N/A" }}</p>
+                    <p><strong>Mean Absolute Error (MAE):</strong> {{ metrics.mae|default:"N/A" }}</p>
+                    <p><strong>Mean Squared Error (MSE):</strong> {{ metrics.mse|default:"N/A" }}</p>
+                </div>
+
+                <div class="ai-insights-right">
+                    <h3>Data Preview</h3>
+                    {% if data %}
+                        <div class="ai-table-wrap">{{ data|safe }}</div>
+                    {% else %}
+                        <p>No data available.</p>
+                    {% endif %}
+                </div>
+            </div>
         </div>
-        <div id="visualizations">
-            <h2>Predictions vs Actual</h2>
-            <img src="{{ prediction_vs_actual_plot }}" alt="Predictions vs Actual Plot">
-            <h2>Feature Importance</h2>
-            <img src="{{ feature_importance_plot }}" alt="Feature Importance Plot">
+
+        <div class="card-footer" style="padding:14px; display:flex; justify-content:flex-end; gap:8px;">
+            <form method="post" style="margin:0">
+                {% csrf_token %}
+                <button class="btn" name="retrain" value="1">Retrain model</button>
+            </form>
+        </div>
         </div>
     </div>
-</body>
-</html>
+{% endblock %}
