@@ -48,11 +48,21 @@ def ai_insights_view(request):
     if data_file.exists():
         data = pd.read_csv(data_file)
 
-    # Convert top rows to an HTML table for embedding in the template
+    # Convert a random sample of rows to an HTML table for embedding in the template
     data_html = ''
     try:
-        # produce a clean table without default borders and with our project classes
-        data_html = data.head().to_html(border=0, classes='table', index=False)
+        # allow optional GET param to control sample size (e.g. ?sample=10)
+        try:
+            sample_size = int(request.GET.get('sample', 5))
+        except Exception:
+            sample_size = 5
+
+        if not data.empty:
+            n = min(max(1, sample_size), len(data))
+            sample_df = data.sample(n=n)
+            data_html = sample_df.to_html(border=0, classes='table', index=False)
+        else:
+            data_html = ''
     except Exception:
         data_html = ''
 
