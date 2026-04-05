@@ -10,6 +10,7 @@ INSTALLED_APPS = [
     "django.contrib.contenttypes",
     "django.contrib.staticfiles",
     "dashboard",
+    "ai_regression_insights.dashboard_integration",
 ]
 
 MIDDLEWARE = [

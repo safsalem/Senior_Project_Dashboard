@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Insights</title>
+    <link rel="stylesheet" href="{% static 'css/styles.css' %}">
+</head>
+<body>
+    <div class="container">
+        <h1>AI Regression Insights</h1>
+        <div id="results">
+            <h2>Model Performance</h2>
+            <p><strong>R-squared:</strong> {{ r_squared }}</p>
+            <p><strong>Mean Absolute Error (MAE):</strong> {{ mae }}</p>
+            <p><strong>Mean Squared Error (MSE):</strong> {{ mse }}</p>
+        </div>
+        <div id="visualizations">
+            <h2>Predictions vs Actual</h2>
+            <img src="{{ prediction_vs_actual_plot }}" alt="Predictions vs Actual Plot">
+            <h2>Feature Importance</h2>
+            <img src="{{ feature_importance_plot }}" alt="Feature Importance Plot">
+        </div>
+    </div>
+</body>
+</html>
