@@ -48,9 +48,15 @@
             <div class="ai-insights-grid">
                 <div class="ai-insights-left">
                     <h3>Model Performance</h3>
-                    <p><strong>R-squared:</strong> {{ metrics.r2|default:"N/A" }}</p>
-                    <p><strong>Mean Absolute Error (MAE):</strong> {{ metrics.mae|default:"N/A" }}</p>
-                    <p><strong>Mean Squared Error (MSE):</strong> {{ metrics.mse|default:"N/A" }}</p>
+                                        <p><strong>R-squared:</strong>
+                                            {% if metrics.r2 != None %}{{ metrics.r2|floatformat:4 }}{% else %}N/A{% endif %}
+                                        </p>
+                                        <p><strong>Mean Absolute Error (MAE):</strong>
+                                            {% if metrics.mae != None %}{{ metrics.mae|floatformat:4 }}{% else %}N/A{% endif %}
+                                        </p>
+                                        <p><strong>Mean Squared Error (MSE):</strong>
+                                            {% if metrics.mse != None %}{{ metrics.mse|floatformat:4 }}{% else %}N/A{% endif %}
+                                        </p>
                 </div>
 
                 <div class="ai-insights-right">
