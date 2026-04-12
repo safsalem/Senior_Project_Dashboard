@@ -28,6 +28,10 @@
            href="/insights/">
           <span class="dot"></span> AI Insights
         </a>
+        <a class="nav-item {% if request.path|slice:':20' == '/simulation-results/' %}active{% endif %}"
+           href="/simulation-results/">
+          <span class="dot"></span> Simulation Results
+        </a>
       </nav>
 
       </aside>

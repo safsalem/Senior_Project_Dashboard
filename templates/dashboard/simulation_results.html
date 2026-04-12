@@ -1,0 +1,153 @@
+{% extends "dashboard/base.html" %}
+{% block title %}Simulation Results{% endblock %}
+{% block page_title %}Simulation Results{% endblock %}
+
+{% block content %}
+  <div class="card full simulation-card">
+    <div class="card-head simulation-head">
+      <div>
+        <div class="card-title">Simulation Case Comparisons</div>
+        <div class="simulation-subtitle">Comparing NOx and CO against selected lambda values.</div>
+      </div>
+      <div class="lambda-picker-wrap">
+        <label for="lambdaSelector" class="lambda-picker-label">Lambda case</label>
+        <select id="lambdaSelector" class="lambda-picker" aria-label="Select lambda case">
+          {% for value in selector_values %}
+            <option value="{{ value }}" {% if value == default_selection %}selected{% endif %}>{{ value }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+
+    <div class="simulation-note" id="simulationNote"></div>
+
+    <div class="grid simulation-grid">
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title">Lambda vs NOx</div>
+        </div>
+        <div class="chart-wrap">
+          <canvas id="lambdaNoxChart" height="120"></canvas>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title">Lambda vs CO</div>
+        </div>
+        <div class="chart-wrap">
+          <canvas id="lambdaCoChart" height="120"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script id="simulationSeries" type="application/json">
+    {{ simulation_series_json|safe }}
+  </script>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const rawSeries = JSON.parse(document.getElementById("simulationSeries").textContent || "{}");
+  const series = {
+    lambdas: Array.isArray(rawSeries.lambdas) ? rawSeries.lambdas : [],
+    nox: Array.isArray(rawSeries.nox) ? rawSeries.nox : [],
+    co: Array.isArray(rawSeries.co) ? rawSeries.co : []
+  };
+
+  const orderedLambdas = ["0.8", "0.9", "1.0", "1.1", "1.2"];
+  const selector = document.getElementById("lambdaSelector");
+  const note = document.getElementById("simulationNote");
+
+  function toLabel(values) {
+    return values.map(v => Number(v).toFixed(1));
+  }
+
+  function filteredData(selection) {
+    const rows = series.lambdas.map((lambda, i) => ({
+      lambda,
+      nox: series.nox[i],
+      co: series.co[i]
+    }));
+
+    if (selection === "all") {
+      return rows;
+    }
+
+    const target = Number(selection);
+    return rows.filter(r => Math.abs(r.lambda - target) < 1e-9);
+  }
+
+  function createChart(canvasId, color, label) {
+    return new Chart(document.getElementById(canvasId), {
+      type: "line",
+      data: {
+        labels: [],
+        datasets: [{
+          label,
+          data: [],
+          fill: false,
+          tension: 0.2,
+          borderColor: color,
+          backgroundColor: color,
+          pointRadius: 4,
+          pointHoverRadius: 6,
+          borderWidth: 2
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: { mode: "index", intersect: false }
+        },
+        scales: {
+          x: { title: { display: true, text: "Lambda" }, grid: { display: false } },
+          y: { beginAtZero: true, title: { display: true, text: "ppm" } }
+        }
+      }
+    });
+  }
+
+  const lambdaNoxChart = createChart("lambdaNoxChart", "#005f8f", "NOx (ppm)");
+  const lambdaCoChart = createChart("lambdaCoChart", "#6e4a2d", "CO (ppm)");
+
+  function updateNote(selection, availableRows) {
+    if (!availableRows.length) {
+      note.textContent = `No simulation data found for lambda ${selection}. Available now: ${series.lambdas.length ? toLabel(series.lambdas).join(", ") : "none"}.`;
+      return;
+    }
+
+    if (selection === "all") {
+      note.textContent = `Showing all available simulation cases: ${toLabel(availableRows.map(r => r.lambda)).join(", ")}.`;
+      return;
+    }
+
+    const missing = orderedLambdas.filter(v => !toLabel(series.lambdas).includes(Number(v).toFixed(1)));
+    const extraMessage = missing.length ? ` Missing cases in workspace: ${missing.join(", ")}.` : "";
+    note.textContent = `Showing simulation case for lambda ${selection}.${extraMessage}`;
+  }
+
+  function refreshCharts(selection) {
+    const rows = filteredData(selection);
+
+    lambdaNoxChart.data.labels = toLabel(rows.map(r => r.lambda));
+    lambdaNoxChart.data.datasets[0].data = rows.map(r => r.nox);
+    lambdaNoxChart.update();
+
+    lambdaCoChart.data.labels = toLabel(rows.map(r => r.lambda));
+    lambdaCoChart.data.datasets[0].data = rows.map(r => r.co);
+    lambdaCoChart.update();
+
+    updateNote(selection, rows);
+  }
+
+  selector.addEventListener("change", (event) => {
+    refreshCharts(event.target.value);
+  });
+
+  refreshCharts(selector.value || "0.8");
+</script>
+{% endblock %}

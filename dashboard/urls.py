@@ -5,6 +5,7 @@ urlpatterns = [
     path("", views.dashboard_view, name="home"),
     path("dashboard/", views.dashboard_view, name="dashboard"),
     path("alerts/", views.alerts_view, name="alerts"),
+    path("simulation-results/", views.simulation_results_view, name="simulation_results"),
     
     # Simple JSON endpoints
     path("api/timeseries/", views.timeseries_api, name="timeseries_api"),

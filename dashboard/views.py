@@ -1,5 +1,7 @@
 import json
+import csv
 from datetime import datetime, timedelta
+from pathlib import Path
 from django.http import JsonResponse
 from django.shortcuts import render
 
@@ -91,3 +93,75 @@ def alerts_api(request):
     rng = request.GET.get("range", "1h")
     alerts = _filter_alerts_by_range(_dummy_alerts(), rng)
     return JsonResponse({"alerts": alerts, "range": rng})
+
+
+def _safe_float(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _extract_component_fractions(file_path):
+    co_fraction = 0.0
+    no_fraction = 0.0
+    no2_fraction = 0.0
+
+    with open(file_path, newline="", encoding="utf-8") as csv_file:
+        reader = csv.reader(csv_file)
+        for row in reader:
+            if len(row) < 4:
+                continue
+
+            metric_name = (row[0] or "").strip()
+            combustion_gas_value = _safe_float(row[2])
+
+            if metric_name == "Comp Mole Frac (CO)":
+                co_fraction = combustion_gas_value
+            elif metric_name == "Comp Mole Frac (NO)":
+                no_fraction = combustion_gas_value
+            elif metric_name == "Comp Mole Frac (NO2)":
+                no2_fraction = combustion_gas_value
+
+    # Convert mole fractions to ppm for easier comparison on charts.
+    co_ppm = round(co_fraction * 1_000_000, 3)
+    nox_ppm = round((no_fraction + no2_fraction) * 1_000_000, 3)
+    return {"co_ppm": co_ppm, "nox_ppm": nox_ppm}
+
+
+def _load_simulation_series():
+    root_dir = Path(__file__).resolve().parents[1]
+    csv_dir = root_dir / "CasesAFR" / "csv"
+
+    lambda_points = []
+    nox_points = []
+    co_points = []
+
+    for composition_file in sorted(csv_dir.glob("Compositions_*.csv")):
+        suffix = composition_file.stem.replace("Compositions_", "")
+        try:
+            lambda_value = float(suffix)
+        except ValueError:
+            continue
+
+        extracted = _extract_component_fractions(composition_file)
+        lambda_points.append(round(lambda_value, 3))
+        nox_points.append(extracted["nox_ppm"])
+        co_points.append(extracted["co_ppm"])
+
+    return {
+        "lambdas": lambda_points,
+        "nox": nox_points,
+        "co": co_points,
+    }
+
+
+def simulation_results_view(request):
+    series = _load_simulation_series()
+    selector_values = ["0.8", "0.9", "1.0", "1.1", "1.2", "all"]
+    context = {
+        "simulation_series_json": json.dumps(series),
+        "selector_values": selector_values,
+        "default_selection": "0.8",
+    }
+    return render(request, "dashboard/simulation_results.html", context)
