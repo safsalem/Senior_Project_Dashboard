@@ -206,3 +206,4 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 ai_regression_insights/ai_model/trained_model.pkl
+ai_regression_insights/ai_model/metrics.json
