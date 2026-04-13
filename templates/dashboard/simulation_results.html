@@ -1,27 +1,20 @@
 {% extends "dashboard/base.html" %}
 {% block title %}Simulation Results{% endblock %}
 {% block page_title %}Simulation Results{% endblock %}
+{% block topbar_pills %}
+  <div class="pill-group time-pills" id="timePills" role="tablist" aria-label="Lambda selector">
+    {% for value in selector_values %}
+      <button class="pill {% if value == default_selection %}active{% endif %}" data-lambda="{{ value }}" type="button">{{ value }}</button>
+    {% endfor %}
+  </div>
+{% endblock %}
 
 {% block content %}
   <div class="card full simulation-card">
-    <div class="card-head simulation-head">
-      <div>
-        <div class="card-title">Simulation Case Comparisons</div>
-        <div class="simulation-subtitle">Comparing NOx and CO against selected lambda values.</div>
-      </div>
-      <div class="lambda-picker-wrap">
-        <label for="lambdaSelector" class="lambda-picker-label">Lambda case</label>
-        <select id="lambdaSelector" class="lambda-picker" aria-label="Select lambda case">
-          {% for value in selector_values %}
-            <option value="{{ value }}" {% if value == default_selection %}selected{% endif %}>{{ value }}</option>
-          {% endfor %}
-        </select>
-      </div>
-    </div>
 
     <div class="simulation-note" id="simulationNote"></div>
 
-    <div class="grid simulation-grid">
+    <div id="allLambdaSection" class="simulation-stack simulation-section hidden">
       <div class="card">
         <div class="card-head">
           <div class="card-title">Lambda vs NOx</div>
@@ -39,53 +32,76 @@
           <canvas id="lambdaCoChart" height="120"></canvas>
         </div>
       </div>
+
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title">Lambda vs O2</div>
+        </div>
+        <div class="chart-wrap">
+          <canvas id="lambdaO2Chart" height="120"></canvas>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title">Temperature vs NOx vs Lambda</div>
+        </div>
+        <div class="chart-wrap">
+          <canvas id="tempNoxAllChart" height="120"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <div id="singleLambdaSection" class="simulation-stack simulation-section hidden">
+      <div class="card full">
+        <div class="card-head">
+          <div class="card-title">Compositions</div>
+        </div>
+        <div class="table-wrap">
+          <table class="table simulation-table" id="compositionsTable"></table>
+        </div>
+      </div>
+
+      <div class="card full">
+        <div class="card-head">
+          <div class="card-title">Material Streams</div>
+        </div>
+        <div class="table-wrap">
+          <table class="table simulation-table" id="materialTable"></table>
+        </div>
+      </div>
     </div>
   </div>
 
-  <script id="simulationSeries" type="application/json">
-    {{ simulation_series_json|safe }}
+  <script id="simulationData" type="application/json">
+    {{ simulation_data_json|safe }}
   </script>
 {% endblock %}
 
 {% block scripts %}
 <script>
-  const rawSeries = JSON.parse(document.getElementById("simulationSeries").textContent || "{}");
-  const series = {
-    lambdas: Array.isArray(rawSeries.lambdas) ? rawSeries.lambdas : [],
-    nox: Array.isArray(rawSeries.nox) ? rawSeries.nox : [],
-    co: Array.isArray(rawSeries.co) ? rawSeries.co : []
-  };
+  const rawData = JSON.parse(document.getElementById("simulationData").textContent || "{}");
+  const simulationCases = rawData.cases || {};
+  const simulationSeries = rawData.series || { lambdas: [], nox: [], co: [], o2: [], temperature: [] };
 
-  const orderedLambdas = ["0.8", "0.9", "1.0", "1.1", "1.2"];
-  const selector = document.getElementById("lambdaSelector");
+  const pillButtons = document.querySelectorAll("#timePills .pill");
   const note = document.getElementById("simulationNote");
+  const allSection = document.getElementById("allLambdaSection");
+  const singleSection = document.getElementById("singleLambdaSection");
+  const compositionsTable = document.getElementById("compositionsTable");
+  const materialTable = document.getElementById("materialTable");
 
-  function toLabel(values) {
+  function lambdaLabels(values) {
     return values.map(v => Number(v).toFixed(1));
   }
 
-  function filteredData(selection) {
-    const rows = series.lambdas.map((lambda, i) => ({
-      lambda,
-      nox: series.nox[i],
-      co: series.co[i]
-    }));
-
-    if (selection === "all") {
-      return rows;
-    }
-
-    const target = Number(selection);
-    return rows.filter(r => Math.abs(r.lambda - target) < 1e-9);
-  }
-
-  function createChart(canvasId, color, label) {
+  function createLineChart(canvasId, color, yLabel) {
     return new Chart(document.getElementById(canvasId), {
       type: "line",
       data: {
         labels: [],
         datasets: [{
-          label,
+          label: yLabel,
           data: [],
           fill: false,
           tension: 0.2,
@@ -105,49 +121,149 @@
         },
         scales: {
           x: { title: { display: true, text: "Lambda" }, grid: { display: false } },
-          y: { beginAtZero: true, title: { display: true, text: "ppm" } }
+          y: { beginAtZero: true, title: { display: true, text: yLabel } }
         }
       }
     });
   }
 
-  const lambdaNoxChart = createChart("lambdaNoxChart", "#005f8f", "NOx (ppm)");
-  const lambdaCoChart = createChart("lambdaCoChart", "#6e4a2d", "CO (ppm)");
+  const lambdaNoxChart = createLineChart("lambdaNoxChart", "#005f8f", "NOx (ppm)");
+  const lambdaCoChart = createLineChart("lambdaCoChart", "#6e4a2d", "CO (ppm)");
+  const lambdaO2Chart = createLineChart("lambdaO2Chart", "#0f6d58", "O2 (Flue Gas Mole Fraction)");
 
-  function updateNote(selection, availableRows) {
-    if (!availableRows.length) {
-      note.textContent = `No simulation data found for lambda ${selection}. Available now: ${series.lambdas.length ? toLabel(series.lambdas).join(", ") : "none"}.`;
-      return;
+  const tempNoxAllChart = new Chart(document.getElementById("tempNoxAllChart"), {
+    type: "line",
+    data: {
+      labels: [],
+      datasets: [{
+        label: "NOx (ppm)",
+        data: [],
+        borderColor: "#005f8f",
+        backgroundColor: "#005f8f",
+        pointRadius: 4,
+        pointHoverRadius: 6,
+        borderWidth: 2,
+        yAxisID: "yNox"
+      }, {
+        label: "Temperature (C)",
+        data: [],
+        borderColor: "#b85b00",
+        backgroundColor: "#b85b00",
+        pointRadius: 4,
+        pointHoverRadius: 6,
+        borderWidth: 2,
+        yAxisID: "yTemp"
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: true }
+      },
+      scales: {
+        x: { title: { display: true, text: "Lambda" } },
+        yNox: {
+          type: "linear",
+          position: "left",
+          beginAtZero: true,
+          title: { display: true, text: "NOx (ppm)" }
+        },
+        yTemp: {
+          type: "linear",
+          position: "right",
+          title: { display: true, text: "Temperature (C)" },
+          grid: { drawOnChartArea: false }
+        }
+      }
     }
-
-    if (selection === "all") {
-      note.textContent = `Showing all available simulation cases: ${toLabel(availableRows.map(r => r.lambda)).join(", ")}.`;
-      return;
-    }
-
-    const missing = orderedLambdas.filter(v => !toLabel(series.lambdas).includes(Number(v).toFixed(1)));
-    const extraMessage = missing.length ? ` Missing cases in workspace: ${missing.join(", ")}.` : "";
-    note.textContent = `Showing simulation case for lambda ${selection}.${extraMessage}`;
-  }
-
-  function refreshCharts(selection) {
-    const rows = filteredData(selection);
-
-    lambdaNoxChart.data.labels = toLabel(rows.map(r => r.lambda));
-    lambdaNoxChart.data.datasets[0].data = rows.map(r => r.nox);
-    lambdaNoxChart.update();
-
-    lambdaCoChart.data.labels = toLabel(rows.map(r => r.lambda));
-    lambdaCoChart.data.datasets[0].data = rows.map(r => r.co);
-    lambdaCoChart.update();
-
-    updateNote(selection, rows);
-  }
-
-  selector.addEventListener("change", (event) => {
-    refreshCharts(event.target.value);
   });
 
-  refreshCharts(selector.value || "0.8");
+  function escapeHtml(value) {
+    return String(value || "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
+  }
+
+  function renderCsvTable(tableEl, tableData) {
+    const headers = Array.isArray(tableData?.headers) ? tableData.headers : [];
+    const rows = Array.isArray(tableData?.rows) ? tableData.rows : [];
+
+    if (!headers.length) {
+      tableEl.innerHTML = "<tbody><tr><td>No table data available for this lambda.</td></tr></tbody>";
+      return;
+    }
+
+    const thead = `<thead><tr>${headers.map(h => `<th>${escapeHtml(h)}</th>`).join("")}</tr></thead>`;
+    const tbody = `<tbody>${rows.map(row => `<tr>${row.map(cell => `<td>${escapeHtml(cell)}</td>`).join("")}</tr>`).join("")}</tbody>`;
+    tableEl.innerHTML = `${thead}${tbody}`;
+  }
+
+  function showAllMode() {
+    allSection.style.display = "block";
+    singleSection.style.display = "none";
+
+    lambdaNoxChart.data.labels = lambdaLabels(simulationSeries.lambdas || []);
+    lambdaNoxChart.data.datasets[0].data = simulationSeries.nox || [];
+    lambdaNoxChart.update();
+
+    lambdaCoChart.data.labels = lambdaLabels(simulationSeries.lambdas || []);
+    lambdaCoChart.data.datasets[0].data = simulationSeries.co || [];
+    lambdaCoChart.update();
+
+    lambdaO2Chart.data.labels = lambdaLabels(simulationSeries.lambdas || []);
+    lambdaO2Chart.data.datasets[0].data = simulationSeries.o2 || [];
+    lambdaO2Chart.update();
+
+    tempNoxAllChart.data.labels = lambdaLabels(simulationSeries.lambdas || []);
+    tempNoxAllChart.data.datasets[0].data = simulationSeries.nox || [];
+    tempNoxAllChart.data.datasets[1].data = simulationSeries.temperature || [];
+    tempNoxAllChart.update();
+
+  }
+
+  function showSingleMode(selectedLambda) {
+    allSection.style.display = "none";
+    singleSection.style.display = "block";
+
+    const selectedCase = simulationCases[selectedLambda];
+    if (!selectedCase) {
+      renderCsvTable(compositionsTable, null);
+      renderCsvTable(materialTable, null);
+      note.textContent = `No simulation files found for lambda ${selectedLambda}.`;
+      return;
+    }
+
+    renderCsvTable(compositionsTable, selectedCase.compositions || {});
+    renderCsvTable(materialTable, selectedCase.material_streams || {});
+
+  }
+
+  function setActivePill(nextValue) {
+    pillButtons.forEach(btn => {
+      btn.classList.toggle("active", btn.dataset.lambda === nextValue);
+    });
+  }
+
+  function renderSelection(selectedLambda) {
+    setActivePill(selectedLambda);
+    if (selectedLambda === "all") {
+      showAllMode();
+      return;
+    }
+    showSingleMode(selectedLambda);
+  }
+
+  pillButtons.forEach(btn => {
+    btn.addEventListener("click", () => {
+      renderSelection(btn.dataset.lambda || "0.8");
+    });
+  });
+
+  const activePill = document.querySelector("#timePills .pill.active");
+  renderSelection(activePill?.dataset.lambda || "0.8");
 </script>
 {% endblock %}

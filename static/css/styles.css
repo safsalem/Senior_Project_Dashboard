@@ -541,28 +541,12 @@ body{
   font-weight: 700;
 }
 
-.lambda-picker-wrap{
-  display:flex;
-  flex-direction:column;
-  gap:6px;
-  min-width: 170px;
-}
-
 .lambda-picker-label{
   font-size:11px;
   text-transform: uppercase;
   letter-spacing:.2px;
   color: var(--muted);
   font-weight: 900;
-}
-
-.lambda-picker{
-  border: 1px solid rgba(0,0,0,.12);
-  border-radius: 10px;
-  background:#fff;
-  color: var(--c1);
-  padding: 9px 10px;
-  font-weight: 800;
 }
 
 .simulation-note{
@@ -578,4 +562,27 @@ body{
 
 .simulation-grid{
   padding: 0 14px;
+}
+
+.simulation-section.hidden{
+  display: none;
+}
+
+.simulation-stack{
+  padding: 0 14px;
+}
+
+.simulation-stack > .card{
+  width: 100%;
+  max-width: 100%;
+  margin-bottom: 16px;
+}
+
+.simulation-stack > .card:last-child{
+  margin-bottom: 0;
+}
+
+.simulation-table th,
+.simulation-table td{
+  white-space: nowrap;
 }

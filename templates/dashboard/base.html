@@ -43,12 +43,14 @@
         </div>
 
         <div class="topbar-right">
-          <div class="pill-group time-pills" id="timePills">
-            <button class="pill" data-range="24h">24h</button>
-            <button class="pill" data-range="10h">10h</button>
-            <button class="pill" data-range="5h">5h</button>
-            <button class="pill active" data-range="1h">1h</button>
-          </div>
+          {% block topbar_pills %}
+            <div class="pill-group time-pills" id="timePills">
+              <button class="pill" data-range="24h">24h</button>
+              <button class="pill" data-range="10h">10h</button>
+              <button class="pill" data-range="5h">5h</button>
+              <button class="pill active" data-range="1h">1h</button>
+            </div>
+          {% endblock %}
 
           <button class="icon-btn" id="notifBtn" aria-label="Notifications">
             <span class="bell"></span>
