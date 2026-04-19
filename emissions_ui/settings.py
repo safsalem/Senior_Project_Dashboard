@@ -1,6 +1,17 @@
 from pathlib import Path
+import os
+from django.core.exceptions import ImproperlyConfigured
+
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    load_dotenv = None
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+if load_dotenv is not None:
+    # Local development convenience: read .env when present.
+    load_dotenv(BASE_DIR / ".env")
 
 SECRET_KEY = "dev-only-secret-key-change-me"
 DEBUG = True
@@ -30,8 +41,21 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "emissions_ui.wsgi.application"
 
-# Frontend MVP: no database needed
-DATABASES = {"default": {"ENGINE": "django.db.backends.sqlite3", "NAME": BASE_DIR / "db.sqlite3"}}
+DATABASES = {
+    "default": {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": os.getenv("DB_NAME", "senior_project"),
+        "USER": os.getenv("DB_USER", "postgres"),
+        "PORT": os.getenv("DB_PORT", "5432"),
+        "CONN_MAX_AGE": int(os.getenv("DB_CONN_MAX_AGE", "60")),
+        "OPTIONS": {
+            "sslmode": os.getenv("DB_SSLMODE", "require"),
+        },
+    }
+}
+
+if not DATABASES["default"]["PASSWORD"]:
+    raise ImproperlyConfigured("Set DB_PASSWORD environment variable for PostgreSQL access.")
 
 LANGUAGE_CODE = "en-us"
 TIME_ZONE = "UTC"

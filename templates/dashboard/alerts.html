@@ -113,6 +113,9 @@
     try{
       const res = await fetch(`/api/alerts/?range=${encodeURIComponent(range)}`);
       const payload = await res.json();
+      if (!res.ok){
+        throw new Error(payload.error || "Failed to fetch alerts");
+      }
       ALERTS_CACHE = payload.alerts || [];
       renderAlerts(ALERTS_CACHE);
     }catch(err){
@@ -147,6 +150,12 @@
     const active = document.querySelector("#timePills .pill.active");
     refreshAlerts(active?.dataset.range || "1h");
   })();
+
+  // Live refresh every second and invoke DB-side upload delay check via API.
+  setInterval(() => {
+    const active = document.querySelector("#timePills .pill.active");
+    refreshAlerts(active?.dataset.range || "1h");
+  }, 1000);
 
   // Modal + filtering
   (function(){
