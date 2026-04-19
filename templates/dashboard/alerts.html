@@ -8,13 +8,27 @@
       <div class="card-head">
         <div class="card-title">Alert History</div>
         <div class="card-actions">
-          <button class="btn btn-ghost btn-sm">Sort</button>
           <button class="btn btn-ghost btn-sm" id="alertsFilterBtn" type="button">Filter</button>
         </div>
       </div>
 
       <div class="table-wrap">
+        <h3>New & Acknowledged</h3>
         <table class="table" id="alertsTable">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Type</th>
+              <th>Value</th>
+              <th>Status</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+
+        <h3>Resolved</h3>
+        <table class="table" id="resolvedAlertsTable">
           <thead>
             <tr>
               <th>Time</th>
@@ -23,26 +37,14 @@
               <th>Status</th>
             </tr>
           </thead>
-          <tbody>
-            {% for a in alerts %}
-            <tr>
-              <td>{{ a.time }}</td>
-              <td>{{ a.type }}</td>
-              <td>{{ a.value }}</td>
-              <td><span class="status {{ a.status|lower }}">{{ a.status }}</span></td>
-            </tr>
-            {% endfor %}
-          </tbody>
+          <tbody></tbody>
         </table>
       </div>
 
       <div class="table-footer">
-        <div class="pager">
-          <button class="pager-btn" aria-label="Previous">‹</button>
-          <button class="pager-btn active">1</button>
-          <button class="pager-btn">2</button>
-          <button class="pager-btn">3</button>
-          <button class="pager-btn">›</button>
+        <div style="display:flex; gap:12px; align-items:center;">
+          <div id="activePager"></div>
+          <div id="resolvedPager"></div>
         </div>
         <div class="showing" id="alertsShowing">Showing {{ alerts|length }}</div>
       </div>
@@ -89,24 +91,100 @@
 {% block scripts %}
 <script>
   let ALERTS_CACHE = [];
+  // persisted filter state applied after each refresh
+  let CURRENT_FILTER = { types: [], statuses: [] };
+  // pagination state
+  const PER_PAGE = 10;
+  let ACTIVE_PAGE = 1;
+  let RESOLVED_PAGE = 1;
 
   function renderAlerts(alerts){
     const tbody = document.querySelector("#alertsTable tbody");
+    const resolvedTbody = document.querySelector("#resolvedAlertsTable tbody");
     const showing = document.getElementById("alertsShowing");
-    if(!tbody) return;
+    if(!tbody || !resolvedTbody) return;
+
+    // sort by ISO ts desc
+    alerts.sort((a,b) => (b.ts || '').localeCompare(a.ts || ''));
+
+    const activeAlerts = alerts.filter(a => a.status !== 'Resolved');
+    const resolvedAlerts = alerts.filter(a => a.status === 'Resolved');
+
+    const activeTotal = activeAlerts.length;
+    const resolvedTotal = resolvedAlerts.length;
+
+    const activePages = Math.max(1, Math.ceil(activeTotal / PER_PAGE));
+    const resolvedPages = Math.max(1, Math.ceil(resolvedTotal / PER_PAGE));
+
+    // clamp current pages
+    if (ACTIVE_PAGE > activePages) ACTIVE_PAGE = activePages;
+    if (RESOLVED_PAGE > resolvedPages) RESOLVED_PAGE = resolvedPages;
+
+    const activeStart = (ACTIVE_PAGE - 1) * PER_PAGE;
+    const resolvedStart = (RESOLVED_PAGE - 1) * PER_PAGE;
+
+    const activeSlice = activeAlerts.slice(activeStart, activeStart + PER_PAGE);
+    const resolvedSlice = resolvedAlerts.slice(resolvedStart, resolvedStart + PER_PAGE);
 
     tbody.innerHTML = "";
-    for (const a of alerts){
-      const tr = document.createElement("tr");
+    resolvedTbody.innerHTML = "";
+
+    for (const a of activeSlice){
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${a.time}</td>
+        <td>${a.type}</td>
+        <td>${a.value}</td>
+        <td><span class="status ${String(a.status || "").toLowerCase()}">${a.status}</span></td>
+        <td><button class="btn btn-sm resolve-btn" data-id="${a.id}">Resolve</button></td>
+      `;
+      tbody.appendChild(tr);
+    }
+
+    for (const a of resolvedSlice){
+      const tr = document.createElement('tr');
       tr.innerHTML = `
         <td>${a.time}</td>
         <td>${a.type}</td>
         <td>${a.value}</td>
         <td><span class="status ${String(a.status || "").toLowerCase()}">${a.status}</span></td>
       `;
-      tbody.appendChild(tr);
+      resolvedTbody.appendChild(tr);
     }
-    if (showing) showing.textContent = `Showing ${alerts.length}`;
+
+    if (showing) showing.textContent = `Showing ${alerts.length} (${activeTotal} active)`;
+
+    // render pagers
+    renderPager('activePager', activePages, ACTIVE_PAGE, (p) => { ACTIVE_PAGE = p; renderAlerts(alerts); });
+    renderPager('resolvedPager', resolvedPages, RESOLVED_PAGE, (p) => { RESOLVED_PAGE = p; renderAlerts(alerts); });
+
+    // attach resolve handlers
+    document.querySelectorAll('.resolve-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const id = btn.dataset.id;
+        try{
+          await fetch(`/api/alerts/resolve/?id=${encodeURIComponent(id)}`);
+        }catch(e){ console.error(e); }
+        // refresh after action
+        const active = document.querySelector("#timePills .pill.active");
+        refreshAlerts(active?.dataset.range || "1h");
+      });
+    });
+  }
+
+
+  function renderPager(containerId, pageCount, currentPage, onClick){
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    container.innerHTML = '';
+    if (pageCount <= 1) return;
+    for (let i=1;i<=pageCount;i++){
+      const btn = document.createElement('button');
+      btn.className = 'pager-btn' + (i===currentPage ? ' active' : '');
+      btn.textContent = String(i);
+      btn.addEventListener('click', () => onClick(i));
+      container.appendChild(btn);
+    }
   }
 
   async function refreshAlerts(range){
@@ -117,7 +195,15 @@
         throw new Error(payload.error || "Failed to fetch alerts");
       }
       ALERTS_CACHE = payload.alerts || [];
-      renderAlerts(ALERTS_CACHE);
+      // apply persisted filter
+      let toRender = ALERTS_CACHE.slice();
+      if (CURRENT_FILTER.types && CURRENT_FILTER.types.length){
+        toRender = toRender.filter(a => CURRENT_FILTER.types.includes(a.type));
+      }
+      if (CURRENT_FILTER.statuses && CURRENT_FILTER.statuses.length){
+        toRender = toRender.filter(a => CURRENT_FILTER.statuses.includes(a.status));
+      }
+      renderAlerts(toRender);
     }catch(err){
       console.error("Error loading alerts", err);
     }
@@ -131,6 +217,35 @@
       if (cb.checked) values.push(cb.value);
     });
     return values;
+  }
+
+
+  function renderNotificationCenter(allAlerts){
+    const list = document.getElementById('notifList');
+    if (!list) return;
+    list.innerHTML = '';
+    const newAlerts = (allAlerts || []).filter(a => a.status === 'New');
+    for (const a of newAlerts){
+      const item = document.createElement('div');
+      item.className = 'notif';
+      item.innerHTML = `<div class="notif-time">${a.time}</div><div class="notif-text">${a.type}: ${a.value}</div><div class="notif-action"><button class="btn btn-sm ack-btn" data-id="${a.id}">Acknowledge</button></div>`;
+      list.appendChild(item);
+    }
+
+    // attach ack handlers
+    document.querySelectorAll('.ack-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const id = btn.dataset.id;
+        try{
+          await fetch(`/api/alerts/acknowledge/?id=${encodeURIComponent(id)}`);
+        }catch(e){ console.error(e); }
+        // remove from notif UI
+        btn.closest('.notif')?.remove();
+        // refresh alerts list
+        const active = document.querySelector("#timePills .pill.active");
+        refreshAlerts(active?.dataset.range || "1h");
+      });
+    });
   }
 
   // Time pills behavior (shared with top bar)
@@ -151,11 +266,17 @@
     refreshAlerts(active?.dataset.range || "1h");
   })();
 
-  // Live refresh every second and invoke DB-side upload delay check via API.
+  // Live refresh every 5 seconds (reduced frequency for performance)
   setInterval(() => {
     const active = document.querySelector("#timePills .pill.active");
     refreshAlerts(active?.dataset.range || "1h");
-  }, 1000);
+  }, 5000);
+
+  // Listen for notifications module events to refresh alerts quickly
+  window.addEventListener('alertsUpdated', () => {
+    const active = document.querySelector("#timePills .pill.active");
+    refreshAlerts(active?.dataset.range || "1h");
+  });
 
   // Modal + filtering
   (function(){
@@ -186,13 +307,17 @@
       const selectedTypes = getCheckedValues("filterTypeGroup");
       const selectedStatuses = getCheckedValues("filterStatusGroup");
 
+      // persist filter
+      CURRENT_FILTER.types = selectedTypes;
+      CURRENT_FILTER.statuses = selectedStatuses;
+
       let filtered = ALERTS_CACHE.slice();
 
-      if (selectedTypes.length){
-        filtered = filtered.filter(a => selectedTypes.includes(a.type));
+      if (CURRENT_FILTER.types.length){
+        filtered = filtered.filter(a => CURRENT_FILTER.types.includes(a.type));
       }
-      if (selectedStatuses.length){
-        filtered = filtered.filter(a => selectedStatuses.includes(a.status));
+      if (CURRENT_FILTER.statuses.length){
+        filtered = filtered.filter(a => CURRENT_FILTER.statuses.includes(a.status));
       }
 
       renderAlerts(filtered);

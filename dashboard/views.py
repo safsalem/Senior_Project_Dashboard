@@ -82,7 +82,7 @@ def _fetch_alerts(hours):
     with connection.cursor() as cursor:
         cursor.execute(
             """
-            SELECT alert_time, alert_type, alert_value, status
+            SELECT id, alert_time, alert_type, alert_value, status
             FROM public.alerts
             WHERE alert_time >= NOW() - (%s * INTERVAL '1 hour')
             ORDER BY alert_time DESC
@@ -92,16 +92,33 @@ def _fetch_alerts(hours):
         rows = cursor.fetchall()
 
     alerts = []
-    for alert_time, alert_type, alert_value, status in rows:
+    for row in rows:
+        (alert_id, alert_time, alert_type, alert_value, status) = row
         alerts.append(
             {
+                "id": str(alert_id) if alert_id else None,
                 "time": _serialize_alert_timestamp(alert_time),
+                # ISO timestamp for reliable client-side sorting/pagination
+                "ts": alert_time.isoformat() if alert_time else "",
                 "type": alert_type or "",
                 "value": alert_value or "",
                 "status": status or "New",
             }
         )
     return alerts
+
+
+def _update_alert_status(alert_id, new_status):
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            UPDATE public.alerts
+            SET status = %s
+            WHERE id = %s
+            """,
+            [new_status, alert_id],
+        )
+    return True
 
 def dashboard_view(request):
     try:
@@ -129,7 +146,8 @@ def alerts_view(request):
     hours = TIME_RANGE_TO_HOURS.get(rng, 1)
 
     try:
-        _invoke_upload_delay_check()
+        # Do NOT invoke the DB-side upload delay check here to avoid blocking page load.
+        # The API endpoint can optionally run the check when requested (see alerts_api).
         alerts = _fetch_alerts(hours)
     except DatabaseError:
         alerts = []
@@ -164,15 +182,64 @@ def timeseries_api(request):
 def alerts_api(request):
     rng = request.GET.get("range", "1h")
     hours = TIME_RANGE_TO_HOURS.get(rng, 1)
+    # Optional query params:
+    #   check=1   -> invoke DB-side upload delay check (expensive)
+    #   only_new=1 -> return only alerts with status 'New'
+    do_check = str(request.GET.get("check", "0")).lower() in ("1", "true", "yes")
+    only_new = str(request.GET.get("only_new", "0")).lower() in ("1", "true", "yes")
 
     try:
-        # Alert endpoint invokes the existing DB-side upload-delay check each refresh.
-        _invoke_upload_delay_check()
+        if do_check:
+            _invoke_upload_delay_check()
         alerts = _fetch_alerts(hours)
     except DatabaseError as exc:
         return JsonResponse({"error": str(exc)}, status=500)
 
+    if only_new:
+        alerts = [a for a in alerts if a.get("status") == 'New']
+
     return JsonResponse({"alerts": alerts, "range": rng})
+
+
+def acknowledge_alert_api(request):
+    # Accept POST JSON or GET param for quick tests
+    alert_id = request.GET.get("id")
+    if not alert_id and request.body:
+        try:
+            payload = json.loads(request.body.decode("utf-8") or "{}")
+            alert_id = alert_id or payload.get("id")
+        except Exception:
+            alert_id = alert_id
+
+    if not alert_id:
+        return JsonResponse({"error": "missing id"}, status=400)
+
+    try:
+        _update_alert_status(alert_id, "Acknowledged")
+    except DatabaseError as exc:
+        return JsonResponse({"error": str(exc)}, status=500)
+
+    return JsonResponse({"ok": True, "id": alert_id, "status": "Acknowledged"})
+
+
+def resolve_alert_api(request):
+    alert_id = request.GET.get("id")
+    if not alert_id and request.body:
+        try:
+            payload = json.loads(request.body.decode("utf-8") or "{}")
+            alert_id = alert_id or payload.get("id")
+        except Exception:
+            alert_id = alert_id
+
+    if not alert_id:
+        return JsonResponse({"error": "missing id"}, status=400)
+
+    try:
+        _update_alert_status(alert_id, "Resolved")
+    except DatabaseError as exc:
+        return JsonResponse({"error": str(exc)}, status=500)
+
+    return JsonResponse({"ok": True, "id": alert_id, "status": "Resolved"})
 
 
 def _safe_float(value):

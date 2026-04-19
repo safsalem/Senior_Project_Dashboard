@@ -68,18 +68,7 @@
             <button class="btn btn-ghost btn-sm" id="notifClose">Close</button>
           </div>
           <div class="notif-list">
-            <div class="notif-item">
-              <div class="notif-item-title">CO High</div>
-              <div class="notif-item-meta">312 ppm • 10:42</div>
-            </div>
-            <div class="notif-item">
-              <div class="notif-item-title">NOx Spike</div>
-              <div class="notif-item-meta">410 ppm • 10:15</div>
-            </div>
-            <div class="notif-item">
-              <div class="notif-item-title">Upload delay</div>
-              <div class="notif-item-meta">Network fluctuation • 09:05</div>
-            </div>
+              <div id="notifList" class="notif-list-inner"></div>
           </div>
         </div>
 
@@ -115,6 +104,52 @@
     document.addEventListener("click", (e) => {
       if (!panel.contains(e.target) && !btn.contains(e.target)) closePanel();
     });
+  })();
+
+  // Notifications polling and rendering (fetch only 'New' alerts)
+  (function(){
+    const badge = document.getElementById('notifBadge');
+    const list = document.getElementById('notifList');
+    const pollInterval = 3000;
+
+    async function loadNotifications(){
+      try{
+        const res = await fetch(`/api/alerts/?range=1h&only_new=1`);
+        if (!res.ok) return;
+        const payload = await res.json();
+        const items = payload.alerts || [];
+        badge.textContent = items.length > 0 ? String(items.length) : '';
+        list.innerHTML = '';
+        for (const a of items){
+          const el = document.createElement('div');
+          el.className = 'notif-item';
+          el.innerHTML = `<div class="notif-item-title">${a.type}</div><div class="notif-item-meta">${a.value} • ${a.time}</div><div class="notif-action"><button class="btn btn-sm ack-btn" data-id="${a.id}">Acknowledge</button></div>`;
+          list.appendChild(el);
+        }
+
+        // attach acknowledge handlers
+        list.querySelectorAll('.ack-btn').forEach(btn => {
+          btn.onclick = async () => {
+            const id = btn.dataset.id;
+            try{
+              await fetch(`/api/alerts/acknowledge/?id=${encodeURIComponent(id)}`);
+            }catch(e){ console.error(e); }
+            // Optimistically remove element and update badge
+            btn.closest('.notif-item')?.remove();
+            const remaining = list.querySelectorAll('.notif-item').length;
+            badge.textContent = remaining > 0 ? String(remaining) : '';
+            // notify other modules (alerts page) to refresh
+            window.dispatchEvent(new Event('alertsUpdated'));
+          };
+        });
+      }catch(e){
+        console.error('Failed to load notifications', e);
+      }
+    }
+
+    // initial load and polling
+    loadNotifications();
+    setInterval(loadNotifications, pollInterval);
   })();
 </script>
 
