@@ -1,79 +1,157 @@
 import json
 import csv
-from datetime import datetime, timedelta
 from pathlib import Path
+from django.db import DatabaseError, connection
 from django.http import JsonResponse
 from django.shortcuts import render
 
-def _make_series(minutes=60, base=250, swing=140, seed=7):
-    # Deterministic pseudo-random series
-    x = []
-    y = []
-    t0 = datetime.utcnow() - timedelta(minutes=minutes)
-    for i in range(minutes + 1):
-        ts = t0 + timedelta(minutes=i)
-        val = base + (swing * (0.6 * (i / max(1, minutes)) - 0.3))
-        val += ((i * 37 + seed * 101) % 23) - 11  # small ripple
-        val = max(0, round(val, 1))
-        x.append(ts.strftime("%H:%M"))
-        y.append(val)
-    return x, y
+TIME_RANGE_TO_MINUTES = {"1h": 60, "5h": 300, "10h": 600, "24h": 1440}
+TIME_RANGE_TO_HOURS = {"1h": 1, "5h": 5, "10h": 10, "24h": 24}
 
-def _dummy_alerts():
-    # Newest first
-    return [
-        {"time": "2026-02-19 10:42", "type": "CO High", "value": "312 ppm", "status": "Acknowledged"},
-        {"time": "2026-02-19 10:15", "type": "NOx Spike", "value": "410 ppm", "status": "New"},
-        {"time": "2026-02-19 09:58", "type": "CO High", "value": "305 ppm", "status": "Resolved"},
-        {"time": "2026-02-19 09:31", "type": "NOx Spike", "value": "395 ppm", "status": "Resolved"},
-        {"time": "2026-02-19 09:05", "type": "System Notice", "value": "Upload delay", "status": "Acknowledged"},
-        {"time": "2026-02-19 08:40", "type": "CO High", "value": "301 ppm", "status": "Resolved"},
-        {"time": "2026-02-19 07:55", "type": "NOx Spike", "value": "372 ppm", "status": "Resolved"},
-        {"time": "2026-02-18 23:10", "type": "System Notice", "value": "Maintenance window", "status": "Resolved"},
-    ]
 
-def _filter_alerts_by_range(alerts, rng):
-    # Query param: range=1h|5h|10h|24h (fallback 1h)
-    mapping = {"1h": 1, "5h": 5, "10h": 10, "24h": 24}
-    hours = mapping.get(rng, 1)
+def _serialize_reading_timestamp(ts):
+    if ts is None:
+        return ""
+    return ts.strftime("%H:%M:%S")
 
-    # "Now" is based on the newest alert timestamp.
-    newest = max(datetime.strptime(a["time"], "%Y-%m-%d %H:%M") for a in alerts)
-    cutoff = newest - timedelta(hours=hours)
 
-    out = []
-    for a in alerts:
-        t = datetime.strptime(a["time"], "%Y-%m-%d %H:%M")
-        if t >= cutoff:
-            out.append(a)
-    return out
+def _serialize_alert_timestamp(ts):
+    if ts is None:
+        return ""
+    return ts.strftime("%Y-%m-%d %H:%M:%S UTC")
+
+
+def _fetch_timeseries(minutes):
+    labels = []
+    nox = []
+    co = []
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT reading_time, nox, co
+            FROM public.sensor_readings
+            WHERE reading_time >= NOW() - (%s * INTERVAL '1 minute')
+            ORDER BY reading_time ASC
+            """,
+            [minutes],
+        )
+        for reading_time, nox_value, co_value in cursor.fetchall():
+            labels.append(_serialize_reading_timestamp(reading_time))
+            nox.append(float(nox_value))
+            co.append(float(co_value))
+
+    return labels, nox, co
+
+
+def _fetch_latest_reading():
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT reading_time, temperature, nox, co
+            FROM public.sensor_readings
+            ORDER BY reading_time DESC
+            LIMIT 1
+            """
+        )
+        row = cursor.fetchone()
+
+    if not row:
+        return {
+            "reading_time": None,
+            "temperature": 0.0,
+            "nox": 0.0,
+            "co": 0.0,
+        }
+
+    reading_time, temperature, nox_value, co_value = row
+    return {
+        "reading_time": reading_time,
+        "temperature": float(temperature),
+        "nox": float(nox_value),
+        "co": float(co_value),
+    }
+
+
+def _invoke_upload_delay_check():
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT public.check_upload_delay();")
+
+
+def _fetch_alerts(hours):
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT id, alert_time, alert_type, alert_value, status
+            FROM public.alerts
+            WHERE alert_time >= NOW() - (%s * INTERVAL '1 hour')
+            ORDER BY alert_time DESC
+            """,
+            [hours],
+        )
+        rows = cursor.fetchall()
+
+    alerts = []
+    for row in rows:
+        (alert_id, alert_time, alert_type, alert_value, status) = row
+        alerts.append(
+            {
+                "id": str(alert_id) if alert_id else None,
+                "time": _serialize_alert_timestamp(alert_time),
+                # ISO timestamp for reliable client-side sorting/pagination
+                "ts": alert_time.isoformat() if alert_time else "",
+                "type": alert_type or "",
+                "value": alert_value or "",
+                "status": status or "New",
+            }
+        )
+    return alerts
+
+
+def _update_alert_status(alert_id, new_status):
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            UPDATE public.alerts
+            SET status = %s
+            WHERE id = %s
+            """,
+            [new_status, alert_id],
+        )
+    return True
 
 def dashboard_view(request):
-    labels, nox = _make_series(minutes=60, base=280, swing=180, seed=7)
-    _, co = _make_series(minutes=60, base=80, swing=70, seed=3)
-
-    # Current readings (latest point)
-    current_nox = nox[-1] if nox else 0
-    current_co = co[-1] if co else 0
-
-    # Dummy ambient temperature for UI
-    temp_c = round(27.0 + (((len(labels) * 13) % 7) - 3) * 0.6, 1)
+    try:
+        labels, nox, co = _fetch_timeseries(TIME_RANGE_TO_MINUTES["1h"])
+        latest = _fetch_latest_reading()
+        updated_at = _serialize_alert_timestamp(latest["reading_time"])
+    except DatabaseError:
+        labels, nox, co = [], [], []
+        latest = {"temperature": 0.0, "nox": 0.0, "co": 0.0, "reading_time": None}
+        updated_at = ""
 
     context = {
         "labels_json": json.dumps(labels),
         "nox_json": json.dumps(nox),
         "co_json": json.dumps(co),
-        "current_nox": current_nox,
-        "current_co": current_co,
-        "temp_c": temp_c,
-        "updated_at": datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC"),
+        "current_nox": latest["nox"],
+        "current_co": latest["co"],
+        "temp_c": latest["temperature"],
+        "updated_at": updated_at,
     }
     return render(request, "dashboard/dashboard.html", context)
 
 def alerts_view(request):
-    # Server-render initial 1h alerts
     rng = request.GET.get("range", "1h")
-    alerts = _filter_alerts_by_range(_dummy_alerts(), rng)
+    hours = TIME_RANGE_TO_HOURS.get(rng, 1)
+
+    try:
+        # Do NOT invoke the DB-side upload delay check here to avoid blocking page load.
+        # The API endpoint can optionally run the check when requested (see alerts_api).
+        alerts = _fetch_alerts(hours)
+    except DatabaseError:
+        alerts = []
+
     return render(request, "dashboard/alerts.html", {"alerts": alerts, "range": rng})
 
 def insights_view(request):
@@ -82,17 +160,86 @@ def insights_view(request):
 
 def timeseries_api(request):
     rng = request.GET.get("range", "1h")
-    mapping = {"1h": 60, "5h": 300, "10h": 600, "24h": 1440}
-    minutes = mapping.get(rng, 60)
+    minutes = TIME_RANGE_TO_MINUTES.get(rng, 60)
 
-    labels, nox = _make_series(minutes=minutes, base=280, swing=180, seed=7)
-    _, co = _make_series(minutes=minutes, base=80, swing=70, seed=3)
-    return JsonResponse({"labels": labels, "nox": nox, "co": co})
+    try:
+        labels, nox, co = _fetch_timeseries(minutes)
+        latest = _fetch_latest_reading()
+        payload = {
+            "labels": labels,
+            "nox": nox,
+            "co": co,
+            "current_nox": latest["nox"],
+            "current_co": latest["co"],
+            "temp_c": latest["temperature"],
+            "updated_at": _serialize_alert_timestamp(latest["reading_time"]),
+        }
+    except DatabaseError as exc:
+        return JsonResponse({"error": str(exc)}, status=500)
+
+    return JsonResponse(payload)
 
 def alerts_api(request):
     rng = request.GET.get("range", "1h")
-    alerts = _filter_alerts_by_range(_dummy_alerts(), rng)
+    hours = TIME_RANGE_TO_HOURS.get(rng, 1)
+    # Optional query params:
+    #   check=1   -> invoke DB-side upload delay check (expensive)
+    #   only_new=1 -> return only alerts with status 'New'
+    do_check = str(request.GET.get("check", "0")).lower() in ("1", "true", "yes")
+    only_new = str(request.GET.get("only_new", "0")).lower() in ("1", "true", "yes")
+
+    try:
+        if do_check:
+            _invoke_upload_delay_check()
+        alerts = _fetch_alerts(hours)
+    except DatabaseError as exc:
+        return JsonResponse({"error": str(exc)}, status=500)
+
+    if only_new:
+        alerts = [a for a in alerts if a.get("status") == 'New']
+
     return JsonResponse({"alerts": alerts, "range": rng})
+
+
+def acknowledge_alert_api(request):
+    # Accept POST JSON or GET param for quick tests
+    alert_id = request.GET.get("id")
+    if not alert_id and request.body:
+        try:
+            payload = json.loads(request.body.decode("utf-8") or "{}")
+            alert_id = alert_id or payload.get("id")
+        except Exception:
+            alert_id = alert_id
+
+    if not alert_id:
+        return JsonResponse({"error": "missing id"}, status=400)
+
+    try:
+        _update_alert_status(alert_id, "Acknowledged")
+    except DatabaseError as exc:
+        return JsonResponse({"error": str(exc)}, status=500)
+
+    return JsonResponse({"ok": True, "id": alert_id, "status": "Acknowledged"})
+
+
+def resolve_alert_api(request):
+    alert_id = request.GET.get("id")
+    if not alert_id and request.body:
+        try:
+            payload = json.loads(request.body.decode("utf-8") or "{}")
+            alert_id = alert_id or payload.get("id")
+        except Exception:
+            alert_id = alert_id
+
+    if not alert_id:
+        return JsonResponse({"error": "missing id"}, status=400)
+
+    try:
+        _update_alert_status(alert_id, "Resolved")
+    except DatabaseError as exc:
+        return JsonResponse({"error": str(exc)}, status=500)
+
+    return JsonResponse({"ok": True, "id": alert_id, "status": "Resolved"})
 
 
 def _safe_float(value):

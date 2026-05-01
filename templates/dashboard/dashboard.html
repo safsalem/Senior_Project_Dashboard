@@ -9,8 +9,8 @@
       <div class="kpi-icon temp"></div>
       <div class="kpi-meta">
         <div class="kpi-label">Temperature</div>
-        <div class="kpi-value">{{ temp_c }} °C</div>
-        <div class="kpi-sub">Updated: {{ updated_at }}</div>
+        <div class="kpi-value"><span id="kpiTemp">{{ temp_c }}</span> °C</div>
+        <div class="kpi-sub">Updated: <span id="kpiUpdatedAt">{{ updated_at }}</span></div>
       </div>
     </div>
 
@@ -18,7 +18,7 @@
       <div class="kpi-icon nox"></div>
       <div class="kpi-meta">
         <div class="kpi-label">Current NOx</div>
-        <div class="kpi-value">{{ current_nox }} ppm</div>
+        <div class="kpi-value"><span id="kpiNox">{{ current_nox }}</span> ppm</div>
         <div class="kpi-sub">Live reading</div>
       </div>
     </div>
@@ -27,7 +27,7 @@
       <div class="kpi-icon co"></div>
       <div class="kpi-meta">
         <div class="kpi-label">Current CO</div>
-        <div class="kpi-value">{{ current_co }} ppm</div>
+        <div class="kpi-value"><span id="kpiCo">{{ current_co }}</span> ppm</div>
         <div class="kpi-sub">Live reading</div>
       </div>
     </div>
@@ -119,12 +119,26 @@
   async function refresh(range) {
     const res = await fetch(`/api/timeseries/?range=${encodeURIComponent(range)}`);
     const payload = await res.json();
+    if (!res.ok) {
+      throw new Error(payload.error || "Failed to fetch timeseries");
+    }
+
     noxChart.data.labels = payload.labels;
     noxChart.data.datasets[0].data = payload.nox;
     noxChart.update();
     coChart.data.labels = payload.labels;
     coChart.data.datasets[0].data = payload.co;
     coChart.update();
+
+    const kpiNox = document.getElementById("kpiNox");
+    const kpiCo = document.getElementById("kpiCo");
+    const kpiTemp = document.getElementById("kpiTemp");
+    const kpiUpdatedAt = document.getElementById("kpiUpdatedAt");
+
+    if (kpiNox) kpiNox.textContent = payload.current_nox ?? "0";
+    if (kpiCo) kpiCo.textContent = payload.current_co ?? "0";
+    if (kpiTemp) kpiTemp.textContent = payload.temp_c ?? "0";
+    if (kpiUpdatedAt) kpiUpdatedAt.textContent = payload.updated_at || "";
   }
 
   // Time pills behavior
@@ -147,5 +161,13 @@
     const active = document.querySelector("#timePills .pill.active");
     refresh(active?.dataset.range || "1h");
   });
+
+  // Live refresh every second.
+  setInterval(() => {
+    const active = document.querySelector("#timePills .pill.active");
+    refresh(active?.dataset.range || "1h").catch((err) => {
+      console.error("Error refreshing dashboard data", err);
+    });
+  }, 1000);
 </script>
 {% endblock %}

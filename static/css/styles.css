@@ -213,6 +213,30 @@ body{
 .notif-item-title{font-weight:900; color: var(--c2)}
 .notif-item-meta{font-size:12px; color: var(--muted); margin-top:3px}
 
+/* Notification list inner (dynamic) */
+.notif-list-inner{
+  padding:10px;
+  max-height:420px;
+  overflow:auto;
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+}
+.notif-item{display:flex; flex-direction:column; gap:6px; padding:12px; border-radius:12px; background: linear-gradient(180deg, rgba(255,255,255,.98), rgba(240,248,252,.9)); border:1px solid rgba(0,0,0,.04);}
+.notif-item-title{font-weight:900; color: var(--c2); font-size:16px}
+.notif-item-meta{font-size:12px; color: var(--muted)}
+.notif-action{margin-top:6px}
+.notif-action .ack-btn{padding:8px 12px; border-radius:10px; background:var(--c4); color:var(--c1); border:none; cursor:pointer; font-weight:800}
+.notif-action .ack-btn:hover{transform:translateY(-1px)}
+
+/* Small-screen positioning for panel */
+@media (max-width: 900px){
+  .notif-panel{right:12px; top:64px; width:92%; max-width:420px}
+}
+
+/* Make badge empty when zero */
+.badge:empty{display:none}
+
 .content{
   padding: 0 22px 24px;
   overflow:auto;
