@@ -158,7 +158,7 @@ EXECUTE FUNCTION public.resolve_upload_delay_on_new_reading();
 -- ====================================
 -- 7) FUNCTION TO CHECK UPLOAD DELAY
 --    Arduino sends every 1 second
---    Delay threshold set to 3 seconds
+--    Delay threshold set to 5 seconds
 -- ====================================
 CREATE OR REPLACE FUNCTION public.check_upload_delay()
 RETURNS VOID
@@ -167,7 +167,7 @@ AS $$
 DECLARE
     latest_reading_id UUID;
     latest_reading_time TIMESTAMPTZ;
-    delay_threshold INTERVAL := INTERVAL '3 seconds';
+    delay_threshold INTERVAL := INTERVAL '5 seconds';
 BEGIN
     SELECT id, reading_time
     INTO latest_reading_id, latest_reading_time
@@ -196,7 +196,7 @@ BEGIN
             'Upload Delay',
             EXTRACT(EPOCH FROM (NOW() - latest_reading_time))::INT || ' seconds',
             'New',
-            'No sensor data received within the allowed 3-second window'
+            'No sensor data received within the allowed 5-second window'
         WHERE NOT EXISTS (
             SELECT 1
             FROM public.alerts a
