@@ -116,19 +116,19 @@
     "CO (ppm)"
   );
 
-  async function refresh(range) {
-    const res = await fetch(`/api/timeseries/?range=${encodeURIComponent(range)}`);
-    const payload = await res.json();
-    if (!res.ok) {
-      throw new Error(payload.error || "Failed to fetch timeseries");
-    }
+  const DASHBOARD_REFRESH_MS = 1000;
+  let activeRange = document.querySelector("#timePills .pill.active")?.dataset.range || "1h";
+  let refreshTimer = null;
+  let activeRequestController = null;
+  let requestVersion = 0;
 
+  function updateDashboard(payload) {
     noxChart.data.labels = payload.labels;
     noxChart.data.datasets[0].data = payload.nox;
-    noxChart.update();
+    noxChart.update("none");
     coChart.data.labels = payload.labels;
     coChart.data.datasets[0].data = payload.co;
-    coChart.update();
+    coChart.update("none");
 
     const kpiNox = document.getElementById("kpiNox");
     const kpiCo = document.getElementById("kpiCo");
@@ -141,33 +141,95 @@
     if (kpiUpdatedAt) kpiUpdatedAt.textContent = payload.updated_at || "";
   }
 
+  function scheduleNextRefresh() {
+    window.clearTimeout(refreshTimer);
+    refreshTimer = window.setTimeout(() => {
+      refresh(activeRange, { source: "auto" }).catch((err) => {
+        if (err.name !== "AbortError") {
+          console.error("Error refreshing dashboard data", err);
+        }
+      });
+    }, DASHBOARD_REFRESH_MS);
+  }
+
+  async function refresh(range, options = {}) {
+    const source = options.source || "manual";
+    const requestedRange = range || "1h";
+
+    if (source === "auto" && activeRequestController) {
+      scheduleNextRefresh();
+      return;
+    }
+
+    activeRange = requestedRange;
+    requestVersion += 1;
+    const currentVersion = requestVersion;
+
+    if (activeRequestController) {
+      activeRequestController.abort();
+    }
+
+    const controller = new AbortController();
+    activeRequestController = controller;
+
+    try {
+      const res = await fetch(`/api/timeseries/?range=${encodeURIComponent(requestedRange)}`, {
+        signal: controller.signal
+      });
+      const payload = await res.json();
+      if (!res.ok) {
+        throw new Error(payload.error || "Failed to fetch timeseries");
+      }
+
+      if (currentVersion === requestVersion && requestedRange === activeRange) {
+        updateDashboard(payload);
+      }
+    } catch (err) {
+      if (err.name === "AbortError") return;
+      throw err;
+    } finally {
+      if (activeRequestController === controller) {
+        activeRequestController = null;
+        scheduleNextRefresh();
+      }
+    }
+  }
+
   // Time pills behavior
   (function () {
     const pills = document.querySelectorAll("#timePills .pill");
     pills.forEach(p => {
       p.addEventListener("click", async () => {
+        const nextRange = p.dataset.range || "1h";
+        if (nextRange === activeRange && p.classList.contains("active")) return;
+
         pills.forEach(x => x.classList.remove("active"));
         p.classList.add("active");
-        await refresh(p.dataset.range || "1h");
+        window.clearTimeout(refreshTimer);
+        await refresh(nextRange).catch((err) => {
+          if (err.name !== "AbortError") {
+            console.error("Error refreshing dashboard data", err);
+          }
+        });
       });
     });
   })();
 
   document.getElementById("noxRefresh")?.addEventListener("click", () => {
     const active = document.querySelector("#timePills .pill.active");
-    refresh(active?.dataset.range || "1h");
-  });
-  document.getElementById("coRefresh")?.addEventListener("click", () => {
-    const active = document.querySelector("#timePills .pill.active");
-    refresh(active?.dataset.range || "1h");
-  });
-
-  // Live refresh every second.
-  setInterval(() => {
-    const active = document.querySelector("#timePills .pill.active");
+    window.clearTimeout(refreshTimer);
     refresh(active?.dataset.range || "1h").catch((err) => {
       console.error("Error refreshing dashboard data", err);
     });
-  }, 1000);
+  });
+  document.getElementById("coRefresh")?.addEventListener("click", () => {
+    const active = document.querySelector("#timePills .pill.active");
+    window.clearTimeout(refreshTimer);
+    refresh(active?.dataset.range || "1h").catch((err) => {
+      console.error("Error refreshing dashboard data", err);
+    });
+  });
+
+  scheduleNextRefresh();
 </script>
 {% endblock %}
