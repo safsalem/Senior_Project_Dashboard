@@ -56,6 +56,8 @@ DATABASES = {
         "NAME": os.getenv("DB_NAME", "senior_project"),
         "USER": os.getenv("DB_USER", "postgres"),
         "PORT": os.getenv("DB_PORT", "5432"),
+        "PASSWORD": os.getenv("DB_PASSWORD", ""),
+        "HOST": os.getenv("DB_HOST", "senior-project-db.c0dmkqe4mx1g.us-east-1.rds.amazonaws.com"),
         "CONN_MAX_AGE": int(os.getenv("DB_CONN_MAX_AGE", "60")),
         "OPTIONS": {
             "sslmode": os.getenv("DB_SSLMODE", "require"),
