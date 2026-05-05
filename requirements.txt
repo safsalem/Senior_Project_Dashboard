@@ -1,0 +1,9 @@
+Django
+gunicorn
+psycopg2-binary
+python-dotenv
+numpy
+pandas
+scikit-learn
+matplotlib
+joblib
